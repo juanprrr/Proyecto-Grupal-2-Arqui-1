@@ -2,11 +2,13 @@ ORG 0x0           ; add to offsets
 
 start:
 	mov edi, 10
-	add eax, 1
+	add eax, 80
     add ebx, 8
+	imul eax, eax
 	add edx, 8
 	sub esi, 2
-	sub ecx, edx
+	mov ecx, edx
+	div ecx
 	add edx, 3
 	sub edx, 4
 	sub edi, 5
