@@ -25,8 +25,14 @@
 #define MAX_STATIONS 10
 #define TYPE_LOAD 0
 #define TYPE_SUM 1
+#define TYPE_SUB 2
+#define TYPE_MUL 3
+#define TYPE_DIV 4
+
 #define LOAD_TIMEOUT 1
 #define SUM_TIMEOUT 2
+#define MUL_TIMEOUT 3
+#define DIV_TIMEOUT 2
 
 conf_class_t *connection_class;
 
@@ -203,6 +209,7 @@ void identify_instruction_and_operand(conf_object_t * obj, conf_object_t * cpu, 
     //Finish an instruction in a station
     instruction_entry * entry = get_instruction_details(obj, address);
     for(int i = 0; i < conn->total_reservation_stations; ++i){ 
+	
         if( conn->stations[i]->in_use && conn->stations[i]->current_timeout == 0){
             conn->restore_rip_address = address; //this is the address to restore after the station finishes the instruction
             conn->restore_rip = true; //controls that rip should be returned to the real address after finished instruction
@@ -220,8 +227,12 @@ void identify_instruction_and_operand(conf_object_t * obj, conf_object_t * cpu, 
     //the operands are most likely easier to detect as a string
     bool available_station_load = false;
     bool available_station_sum = false;
+	bool available_station_mul = false;	
+    bool available_station_sub = false;	
+    bool available_station_div = false;	
     if(strncmp(entry->disassembled_text, "mov", 3) == 0) {
         for(int i = 0; i < conn->total_reservation_stations; ++i){ //Add instruction to station
+			SIM_LOG_INFO(1, obj, 0, "MOV instruction loop. Current index: %i \n Current Entry: %s",i, entry->disassembled_text);
             if(!conn->stations[i]->in_use && conn->stations[i]->type == TYPE_LOAD){
                conn->stations[i]->curr_inst = entry;
                conn->stations[i]->in_use = true;
@@ -233,6 +244,7 @@ void identify_instruction_and_operand(conf_object_t * obj, conf_object_t * cpu, 
     }
     if(strncmp(entry->disassembled_text, "add", 3) == 0) {
         for(int i = 0; i < conn->total_reservation_stations; ++i){
+			SIM_LOG_INFO(1, obj, 0, "SUM instruction loop. Current index: %i \n Current Entry: %s",i, entry->disassembled_text);
             if(!conn->stations[i]->in_use && conn->stations[i]->type == TYPE_SUM){
                 conn->stations[i]->curr_inst = entry;
                 conn->stations[i]->in_use = true;
@@ -242,13 +254,56 @@ void identify_instruction_and_operand(conf_object_t * obj, conf_object_t * cpu, 
             }
         }
     }
+
+    if(strncmp(entry->disassembled_text, "sub", 3) == 0) {
+        for(int i = 0; i < conn->total_reservation_stations; ++i){
+			SIM_LOG_INFO(1, obj, 0, "SUB instruction loop. Current index: %i \n Current Entry: %s",i, entry->disassembled_text);
+            if(!conn->stations[i]->in_use && conn->stations[i]->type == TYPE_SUB){
+                conn->stations[i]->curr_inst = entry;
+                conn->stations[i]->in_use = true;
+                conn->stations[i]->current_timeout = SUM_TIMEOUT;
+                available_station_sub = true;
+                conn->skip_instruction = true; //is already in a station, do not execute yet
+            }
+        }
+    }    
+
+    if(strncmp(entry->disassembled_text, "mul", 3) == 0) {
+        for(int i = 0; i < conn->total_reservation_stations; ++i){
+			SIM_LOG_INFO(1, obj, 0, "MUL instruction loop. Current index: %i \n Current Entry: %s",i, entry->disassembled_text);
+            if(!conn->stations[i]->in_use && conn->stations[i]->type == TYPE_MUL){
+                conn->stations[i]->curr_inst = entry;
+                conn->stations[i]->in_use = true;
+                conn->stations[i]->current_timeout = MUL_TIMEOUT;
+                available_station_mul = true;
+                conn->skip_instruction = true; //is already in a station, do not execute yet
+            }
+        }
+    }
+
+    if(strncmp(entry->disassembled_text, "div", 3) == 0) {
+        for(int i = 0; i < conn->total_reservation_stations; ++i){
+			SIM_LOG_INFO(1, obj, 0, "DIV instruction loop. Current index: %i \n Current Entry: %s",i, entry->disassembled_text);
+            if(!conn->stations[i]->in_use && conn->stations[i]->type == TYPE_DIV){
+                conn->stations[i]->curr_inst = entry;
+                conn->stations[i]->in_use = true;
+                conn->stations[i]->current_timeout = DIV_TIMEOUT;
+                available_station_div = true;
+                conn->skip_instruction = true; //is already in a station, do not execute yet
+            }
+        }
+    }
+
     //No station can take this instruction that was issued, we need to stall until they free up
-    if(!available_station_sum && !available_station_load && !conn->finish){
+    if(!available_station_sum && !available_station_sub 
+        && !available_station_load && !available_station_mul 
+        && !available_station_div && !conn->finish){
         SIM_LOG_INFO(1, obj, 0, "I need to stall");
         conn->stall = true;
         conn->stall_address = address; //we'll loop in the current RIP until some engine finished and removes the stall
         return;
     }
+
 
     /*Here you can add all the other stations that you want, they can follow the usage of the same APIs*/
 }
@@ -267,7 +322,14 @@ void station_timers(conf_object_t * obj){
                 SIM_LOG_INFO(1, obj, 0, "Station LOAD decremented timeout to %x\n", conn->stations[i]->current_timeout);
             } else if(conn->stations[i]->type==1){
                 SIM_LOG_INFO(1, obj, 0, "Station SUM decremented timeout to %x\n", conn->stations[i]->current_timeout);
-            }   
+            } else if(conn->stations[i]->type==2){
+                SIM_LOG_INFO(1, obj, 0, "Station SUB decremented timeout to %x\n", conn->stations[i]->current_timeout);
+            } else if(conn->stations[i]->type==3){
+                SIM_LOG_INFO(1, obj, 0, "Station MUL decremented timeout to %x\n", conn->stations[i]->current_timeout);
+            } else if(conn->stations[i]->type==4){
+                SIM_LOG_INFO(1, obj, 0, "Station DIV decremented timeout to %x\n", conn->stations[i]->current_timeout);
+            }     
+              
         }
     }
 }
@@ -392,6 +454,7 @@ void add_instruction_data(conf_object_t * obj, logical_address_t pa, char * disa
             return;
     }
     conn->issued_instructions[conn->issued_instruction_size].address = pa;
+    SIM_LOG_INFO(1, obj, 0,"ADDING INSTRUCTION TO INST LIST: %s", strdup(disasm));
     conn->issued_instructions[conn->issued_instruction_size++].disassembled_text = strdup(disasm);
 }
 
@@ -424,6 +487,8 @@ gather_instruction_data(conf_object_t *obj, conf_object_t *cpu,
     cpu_bytes_t bytes = conn->iq_iface->get_instruction_bytes(cpu, i_handle); //get the bytes
     attr_value_t op_code = SIM_make_attr_data(bytes.size, bytes.data); //Makes a data object
     tuple_int_string_t disasm = conn->pi_iface->disassemble(cpu, (physical_address_t) la, op_code, 0);
+    SIM_LOG_INFO(1, obj, 0, "New instruction read of type: %s", disasm.string);
+    
     add_instruction_data(obj, la, disasm.string);
     print_all_instruction_data(obj);
     conn->ir_iface->register_emulation_cb(cpu, tomasulo_algorithm, handle, (void *) la, dealloc); 
@@ -439,18 +504,36 @@ void init_add_station(conf_object_t * obj, unit_functional_station * station){
     station->in_use = false;
     station->current_timeout = 0;
     conn->stations[conn->total_reservation_stations++] = station;
+	SIM_LOG_INFO(1, obj, 0, "New station of type: %i added", station->type);
 }
 
 /*
  *Here add all the code required to create a new station
  * */
 void init_all_stations(conf_object_t * obj){
+
     unit_functional_station * new_station =  MM_ZALLOC(1, unit_functional_station);
     new_station->type = TYPE_SUM;
     init_add_station(obj, new_station);
+    
+    new_station =  MM_ZALLOC(1, unit_functional_station);
+    new_station->type = TYPE_SUB;
+    init_add_station(obj, new_station);
+
     new_station =  MM_ZALLOC(1, unit_functional_station);
     new_station->type = TYPE_LOAD;
     init_add_station(obj, new_station);
+
+    new_station =  MM_ZALLOC(1, unit_functional_station);
+    new_station->type = TYPE_MUL;
+    init_add_station(obj, new_station);
+
+    new_station =  MM_ZALLOC(1, unit_functional_station);
+    new_station->type = TYPE_DIV;
+    init_add_station(obj, new_station);
+
+
+
     /*Here you can add stations of different types and ALWAYS call the init_add_station function to record it in the stations array so that 
      * it's decremented every cycle.
      * EXAMPLE:
@@ -645,4 +728,3 @@ init_local(void)
         init_tool_class();
         init_connection_class();
 }
-

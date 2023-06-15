@@ -7,8 +7,8 @@ board.mb.phys_mem.map
 #For further information turning all verbose for the DMA device
 dma.log-level 4
 
-#board.mb.phys_mem.add-map dma.bank.regs  0x250000000 0xc
-#board.mb.phys_mem.map
+board.mb.phys_mem.add-map dma.bank.regs  0x250000000 0xc
+board.mb.phys_mem.map
 #board.mb.phys_mem.write 0x250000004 0x20000
 #print-device-regs dma DMA_source
 #board.mb.phys_mem.write 0x250000008 0x30000
